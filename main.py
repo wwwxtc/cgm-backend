@@ -34,7 +34,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # 🔬 Initialize Image Classifier
 # ----------------------------
 
-cv_model = timm.create_model("vit_base_patch16_224.food101", pretrained=True)
+cv_model = timm.create_model("resnet50d", pretrained=True)
 cv_model.eval()
 
 # Food-101 labels (loaded from timm's metadata)
