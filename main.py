@@ -7,7 +7,6 @@ from torchvision import models, transforms
 import torch
 import io
 import os
-import timm
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -25,34 +24,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ----------------------------
-# 🤖 Initialize OpenAI Client
-# ----------------------------
+# Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ----------------------------
-# 🔬 Initialize Image Classifier
-# ----------------------------
-
-cv_model = timm.create_model("resnet50d", pretrained=True)
+# Load pretrained MobileNetV2
+cv_model = models.mobilenet_v2(pretrained=True)
 cv_model.eval()
 
-# Food-101 labels (loaded from timm's metadata)
-food101_labels = cv_model.pretrained_cfg["label_names"]
+# ImageNet labels — basic index placeholder
+imagenet_labels = [f"class_{i}" for i in range(1000)]
+imagenet_labels[954] = "banana"  # override example (optional)
 
+# Image transform
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=cv_model.pretrained_cfg["mean"], std=cv_model.pretrained_cfg["std"]),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-# ------------------------
-# 🗨️ /chat endpoint
-# ------------------------
-
+# Chat input schema
 class ChatInput(BaseModel):
     message: str
 
+# Chat endpoint
 @app.post("/chat")
 def chat(data: ChatInput):
     try:
@@ -64,16 +58,11 @@ def chat(data: ChatInput):
             ],
             temperature=0.7
         )
-        return {
-            "reply": response.choices[0].message.content
-        }
+        return {"reply": response.choices[0].message.content}
     except Exception as e:
         return {"error": str(e)}
 
-# ------------------------
-# 🖼️ /analyze image endpoint
-# ------------------------
-
+# Image analysis endpoint
 @app.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
     try:
@@ -87,9 +76,8 @@ async def analyze_image(file: UploadFile = File(...)):
             confidence, class_id = torch.max(probs, 0)
 
         return {
-            "label": food101_labels[class_id.item()],
+            "label": imagenet_labels[class_id.item()],
             "confidence": float(confidence)
         }
-
     except Exception as e:
         return {"error": str(e)}
