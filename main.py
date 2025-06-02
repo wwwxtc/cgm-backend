@@ -1,7 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
+from PIL import Image
+from torchvision import models, transforms
+import torch
+import io
 import os
 
 # Initialize FastAPI app
@@ -9,60 +13,38 @@ app = FastAPI()
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the CGM Prediction API! Visit /docs to test."}
+    return {"message": "Welcome to the CGM Image & Chat API. Visit /docs to test."}
 
-# Enable CORS for development (allow all origins)
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this in production
+    allow_origins=["*"],  # Change in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize OpenAI client using SDK v1.x
+# ----------------------------
+# 🤖 Initialize OpenAI Client
+# ----------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ----------------------------
-# 📌 /predict endpoint section
+# 🔬 Initialize Image Classifier
 # ----------------------------
+cv_model = models.mobilenet_v2(pretrained=True)
+cv_model.eval()
 
-class MealData(BaseModel):
-    description: str
-    carbs: float
-    protein: float
-    fat: float
+imagenet_labels = ["class_{}".format(i) for i in range(1000)]
+imagenet_labels[954] = "banana"  # example override
 
-def get_chatgpt_advice(meal_desc: str, predicted_cgm: float) -> str:
-    prompt = (
-        f"My glucose is predicted to rise to {predicted_cgm:.1f} mg/dL after eating: {meal_desc}. "
-        f"What advice would you give?"
-    )
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a helpful diabetes assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"(LLM Error) {str(e)}"
-
-@app.post("/predict")
-def predict(data: MealData):
-    predicted_cgm = 180 + data.carbs * 0.5 - data.fat * 0.3
-    advice = get_chatgpt_advice(data.description, predicted_cgm)
-    return {
-        "prediction": predicted_cgm,
-        "advice": advice
-    }
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+])
 
 # ------------------------
-# 🗨️ /chat endpoint section
+# 🗨️ /chat endpoint
 # ------------------------
 
 class ChatInput(BaseModel):
@@ -82,5 +64,29 @@ def chat(data: ChatInput):
         return {
             "reply": response.choices[0].message.content
         }
+    except Exception as e:
+        return {"error": str(e)}
+
+# ------------------------
+# 🖼️ /analyze image endpoint
+# ------------------------
+
+@app.post("/analyze")
+async def analyze_image(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        tensor = transform(image).unsqueeze(0)
+
+        with torch.no_grad():
+            outputs = cv_model(tensor)
+            probs = torch.nn.functional.softmax(outputs[0], dim=0)
+            confidence, class_id = torch.max(probs, 0)
+
+        return {
+            "label": imagenet_labels[class_id.item()],
+            "confidence": float(confidence)
+        }
+
     except Exception as e:
         return {"error": str(e)}
