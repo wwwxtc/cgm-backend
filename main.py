@@ -4,10 +4,14 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# 🔓 Allow all origins (for development)
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the CGM Prediction API! Visit /docs to test."}
+
+#  Allow all origins (for development)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 👈 Allow all domains — restrict in production
+    allow_origins=["*"],  #  Allow all domains — restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
