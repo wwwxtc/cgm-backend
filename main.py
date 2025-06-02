@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import openai
+from openai import OpenAI
 import os
 
 # Initialize FastAPI app
@@ -20,8 +20,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load OpenAI API key from environment variable
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Initialize OpenAI client using SDK v1.x
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Input schema
 class MealData(BaseModel):
@@ -36,17 +36,17 @@ def get_chatgpt_advice(meal_desc: str, predicted_cgm: float) -> str:
         f"My glucose is predicted to rise to {predicted_cgm:.1f} mg/dL after eating: {meal_desc}. "
         f"What advice would you give?"
     )
-    
+
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful diabetes assistant."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
+            temperature=0.7
         )
-        return response["choices"][0]["message"]["content"]
+        return response.choices[0].message.content
     except Exception as e:
         return f"(LLM Error) {str(e)}"
 
