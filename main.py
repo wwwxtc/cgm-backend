@@ -23,14 +23,16 @@ app.add_middleware(
 # Initialize OpenAI client using SDK v1.x
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Input schema
+# ----------------------------
+# 📌 /predict endpoint section
+# ----------------------------
+
 class MealData(BaseModel):
     description: str
     carbs: float
     protein: float
     fat: float
 
-# Function to call ChatGPT-4o
 def get_chatgpt_advice(meal_desc: str, predicted_cgm: float) -> str:
     prompt = (
         f"My glucose is predicted to rise to {predicted_cgm:.1f} mg/dL after eating: {meal_desc}. "
@@ -50,7 +52,6 @@ def get_chatgpt_advice(meal_desc: str, predicted_cgm: float) -> str:
     except Exception as e:
         return f"(LLM Error) {str(e)}"
 
-# Prediction endpoint
 @app.post("/predict")
 def predict(data: MealData):
     predicted_cgm = 180 + data.carbs * 0.5 - data.fat * 0.3
@@ -59,3 +60,27 @@ def predict(data: MealData):
         "prediction": predicted_cgm,
         "advice": advice
     }
+
+# ------------------------
+# 🗨️ /chat endpoint section
+# ------------------------
+
+class ChatInput(BaseModel):
+    message: str
+
+@app.post("/chat")
+def chat(data: ChatInput):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful diabetes assistant."},
+                {"role": "user", "content": data.message}
+            ],
+            temperature=0.7
+        )
+        return {
+            "reply": response.choices[0].message.content
+        }
+    except Exception as e:
+        return {"error": str(e)}
