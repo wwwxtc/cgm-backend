@@ -7,6 +7,7 @@ from torchvision import models, transforms
 import torch
 import io
 import os
+import timm
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -32,15 +33,17 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # ----------------------------
 # 🔬 Initialize Image Classifier
 # ----------------------------
-cv_model = models.mobilenet_v2(pretrained=True)
+
+cv_model = timm.create_model("vit_base_patch16_224.food101", pretrained=True)
 cv_model.eval()
 
-imagenet_labels = ["class_{}".format(i) for i in range(1000)]
-imagenet_labels[954] = "banana"  # example override
+# Food-101 labels (loaded from timm's metadata)
+food101_labels = cv_model.pretrained_cfg["label_names"]
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
+    transforms.Normalize(mean=cv_model.pretrained_cfg["mean"], std=cv_model.pretrained_cfg["std"]),
 ])
 
 # ------------------------
@@ -84,7 +87,7 @@ async def analyze_image(file: UploadFile = File(...)):
             confidence, class_id = torch.max(probs, 0)
 
         return {
-            "label": imagenet_labels[class_id.item()],
+            "label": food101_labels[class_id.item()],
             "confidence": float(confidence)
         }
 
