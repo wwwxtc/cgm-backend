@@ -1,30 +1,61 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import openai
+import os
 
+# Initialize FastAPI app
 app = FastAPI()
 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the CGM Prediction API! Visit /docs to test."}
 
-#  Allow all origins (for development)
+# Enable CORS for development (allow all origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  #  Allow all domains — restrict in production
+    allow_origins=["*"],  # Change this in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Load OpenAI API key from environment variable
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Input schema
 class MealData(BaseModel):
     description: str
     carbs: float
     protein: float
     fat: float
 
+# Function to call ChatGPT-4o
+def get_chatgpt_advice(meal_desc: str, predicted_cgm: float) -> str:
+    prompt = (
+        f"My glucose is predicted to rise to {predicted_cgm:.1f} mg/dL after eating: {meal_desc}. "
+        f"What advice would you give?"
+    )
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful diabetes assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+        )
+        return response["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"(LLM Error) {str(e)}"
+
+# Prediction endpoint
 @app.post("/predict")
 def predict(data: MealData):
     predicted_cgm = 180 + data.carbs * 0.5 - data.fat * 0.3
-    advice = f"For your meal '{data.description}', predicted CGM is {predicted_cgm:.1f} mg/dL."
-    return {"prediction": predicted_cgm, "advice": advice}
+    advice = get_chatgpt_advice(data.description, predicted_cgm)
+    return {
+        "prediction": predicted_cgm,
+        "advice": advice
+    }
