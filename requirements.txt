@@ -5,3 +5,4 @@ openai>=1.0.0
 pillow
 python-multipart
 google-generativeai
+slowapi

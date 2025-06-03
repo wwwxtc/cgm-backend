@@ -1,11 +1,15 @@
 import os
 import io
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from openai import OpenAI
 import google.generativeai as genai
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # Load API keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -23,6 +27,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 # Welcome route
 @app.get("/")
 def read_root():
@@ -37,7 +47,10 @@ class ChatInput(BaseModel):
 
 # Chat endpoint using OpenAI GPT-4o
 @app.post("/chat")
-def chat(data: ChatInput):
+@limiter.limit("10/minute")  # Step 3: Apply rate limit here
+async def chat(request: Request, data: ChatInput):
+    if not data.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -57,15 +70,14 @@ model = genai.GenerativeModel("gemini-1.5-pro")
 
 # Gemini vision endpoint
 @app.post("/analyze-image/")
-async def analyze_image(image: UploadFile = File(...)):
+@limiter.limit("5/minute")  # Step 3: Apply rate limit here
+async def analyze_image(request: Request, image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
         allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"]
         if image.content_type not in allowed_types:
             raise HTTPException(status_code=400, detail="Unsupported image format. Use JPEG, PNG, or WEBP.")
 
-    
-        # Gemini accepts binary image content directly with the prompt
         response = model.generate_content(
             [
                 {
