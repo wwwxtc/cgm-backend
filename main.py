@@ -83,79 +83,126 @@
 #     except Exception as e:
 #         return {"error": str(e)}
 
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.middleware.cors import CORSMiddleware
-import google.generativeai as genai
-from pydantic import BaseModel
-from openai import OpenAI
-from PIL import Image
-from torchvision import models, transforms
-import torch
-import io
-import os
 
-# Initialize FastAPI app
+
+
+
+
+# from fastapi import FastAPI, UploadFile, File, Form
+# from fastapi.middleware.cors import CORSMiddleware
+# import google.generativeai as genai
+# from pydantic import BaseModel
+# from openai import OpenAI
+# from PIL import Image
+# from torchvision import models, transforms
+# import torch
+# import io
+# import os
+
+# # Initialize FastAPI app
+# app = FastAPI()
+
+# @app.get("/")
+# def read_root():
+#     return {"message": "Welcome to the CGM Image & Chat API. Visit /docs to test."}
+
+# # Enable CORS
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+# # Initialize OpenAI client
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# # Configure Gemini API
+# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# gemini_model = genai.GenerativeModel("gemini-1.5-pro-vision")
+
+# # Transform for classifier
+# transform = transforms.Compose([
+#     transforms.Resize((224, 224)),
+#     transforms.ToTensor(),
+#     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+# ])
+
+# # Chat input schema
+# class ChatInput(BaseModel):
+#     message: str
+
+# # 🔹 GPT-4o text chat endpoint
+# @app.post("/chat")
+# def chat(data: ChatInput):
+#     try:
+#         response = client.chat.completions.create(
+#             model="gpt-4o",
+#             messages=[
+#                 {"role": "system", "content": "You are a helpful diabetes assistant."},
+#                 {"role": "user", "content": data.message}
+#             ],
+#             temperature=0.7
+#         )
+#         return {"reply": response.choices[0].message.content}
+#     except Exception as e:
+#         return {"error": str(e)}
+
+# # 🔹 Gemini Vision + Text endpoint
+# @app.post("/visionchat")
+# async def vision_chat(file: UploadFile = File(...), prompt: str = Form(...)):
+#     try:
+#         contents = await file.read()
+#         image = Image.open(io.BytesIO(contents)).convert("RGB")
+
+#         # Use Gemini's direct image support
+#         response = gemini_model.generate_content(
+#             [image, prompt]
+#         )
+
+#         return {"reply": response.text}
+#     except Exception as e:
+#         return {"error": str(e)}
+
+
+
+import os
+import google.generativeai as genai
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
+
+# Load your API key securely
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+genai.configure(api_key=GEMINI_API_KEY)
+
 app = FastAPI()
 
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the CGM Image & Chat API. Visit /docs to test."}
+# Initialize the Gemini 1.5 Pro multimodal model
+model = genai.GenerativeModel("gemini-1.5-pro")
 
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Configure Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-gemini_model = genai.GenerativeModel("gemini-1.5-pro-vision")
-
-# Transform for classifier
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
-
-# Chat input schema
-class ChatInput(BaseModel):
-    message: str
-
-# 🔹 GPT-4o text chat endpoint
-@app.post("/chat")
-def chat(data: ChatInput):
+@app.post("/analyze-image/")
+async def analyze_image(image: UploadFile = File(...)):
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a helpful diabetes assistant."},
-                {"role": "user", "content": data.message}
-            ],
-            temperature=0.7
-        )
-        return {"reply": response.choices[0].message.content}
-    except Exception as e:
-        return {"error": str(e)}
+        # Read image bytes
+        image_bytes = await image.read()
 
-# 🔹 Gemini Vision + Text endpoint
-@app.post("/visionchat")
-async def vision_chat(file: UploadFile = File(...), prompt: str = Form(...)):
-    try:
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        # Gemini expects image as a part of the content block
+        content = [
+            {
+                "mime_type": image.content_type,
+                "data": image_bytes
+            }
+        ]
 
-        # Use Gemini's direct image support
-        response = gemini_model.generate_content(
-            [image, prompt]
+        response = model.generate_content(
+            contents=[
+                {"role": "user", "parts": content + [{"text": "Describe this image"}]}
+            ]
         )
 
-        return {"reply": response.text}
+        return JSONResponse(content={"text": response.text})
+    
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
