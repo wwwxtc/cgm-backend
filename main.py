@@ -168,41 +168,80 @@
 
 
 import os
-import google.generativeai as genai
+import io
 from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from openai import OpenAI
+import google.generativeai as genai
 
-# Load your API key securely
+# Load API keys
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-genai.configure(api_key=GEMINI_API_KEY)
-
+# Initialize FastAPI app
 app = FastAPI()
 
-# Initialize the Gemini 1.5 Pro multimodal model
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Be specific in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Welcome route
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the CGM Image & Chat API. Visit /docs to test."}
+
+# Initialize OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Chat input schema
+class ChatInput(BaseModel):
+    message: str
+
+# Chat endpoint using OpenAI GPT-4o
+@app.post("/chat")
+def chat(data: ChatInput):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful diabetes assistant."},
+                {"role": "user", "content": data.message}
+            ],
+            temperature=0.7
+        )
+        return {"reply": response.choices[0].message.content}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Configure Gemini API
+genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-pro")
 
+# Gemini vision endpoint
 @app.post("/analyze-image/")
 async def analyze_image(image: UploadFile = File(...)):
     try:
-        # Read image bytes
         image_bytes = await image.read()
 
-        # Gemini expects image as a part of the content block
-        content = [
-            {
-                "mime_type": image.content_type,
-                "data": image_bytes
-            }
-        ]
-
-        response = model.generate_content(
-            contents=[
-                {"role": "user", "parts": content + [{"text": "Describe this image"}]}
-            ]
+        # Convert to Gemini-accepted format
+        gemini_image = genai.types.Blob(
+            mime_type=image.content_type,
+            data=image_bytes
         )
 
-        return JSONResponse(content={"text": response.text})
-    
+        response = model.generate_content([
+            gemini_image,
+            "Describe this image"
+        ])
+
+        return {"text": response.text}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
