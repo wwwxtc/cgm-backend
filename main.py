@@ -1,5 +1,6 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+import google.generativeai as genai
 from pydantic import BaseModel
 from openai import OpenAI
 from PIL import Image
@@ -18,7 +19,7 @@ def read_root():
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,15 +28,19 @@ app.add_middleware(
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Load pretrained MobileNetV2
+# Configure Gemini API
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+gemini_model = genai.GenerativeModel("gemini-1.5-pro")
+
+# Load MobileNetV2
 cv_model = models.mobilenet_v2(pretrained=True)
 cv_model.eval()
 
-# ImageNet labels — basic index placeholder
+# ImageNet labels
 imagenet_labels = [f"class_{i}" for i in range(1000)]
-imagenet_labels[954] = "banana"  # override example (optional)
+imagenet_labels[954] = "banana"
 
-# Image transform
+# Transform for classifier
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -46,7 +51,7 @@ transform = transforms.Compose([
 class ChatInput(BaseModel):
     message: str
 
-# Chat endpoint
+# 🔹 GPT-4o text chat endpoint
 @app.post("/chat")
 def chat(data: ChatInput):
     try:
@@ -62,7 +67,7 @@ def chat(data: ChatInput):
     except Exception as e:
         return {"error": str(e)}
 
-# Image analysis endpoint
+# 🔹 MobileNet image classifier endpoint
 @app.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
     try:
@@ -79,5 +84,24 @@ async def analyze_image(file: UploadFile = File(...)):
             "label": imagenet_labels[class_id.item()],
             "confidence": float(confidence)
         }
+    except Exception as e:
+        return {"error": str(e)}
+
+# 🔹 Gemini Vision + Text endpoint
+@app.post("/visionchat")
+async def vision_chat(file: UploadFile = File(...), prompt: str = Form(...)):
+    try:
+        contents = await file.read()
+        image_data = Image.open(io.BytesIO(contents)).convert("RGB")
+        image_bytes = io.BytesIO()
+        image_data.save(image_bytes, format="JPEG")
+        image_bytes.seek(0)
+
+        response = gemini_model.generate_content(
+            [genai.types.Part.from_data(data=image_bytes.read(), mime_type="image/jpeg"), prompt],
+            stream=False
+        )
+
+        return {"reply": response.text}
     except Exception as e:
         return {"error": str(e)}
