@@ -117,14 +117,6 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 gemini_model = genai.GenerativeModel("gemini-1.5-pro-vision")
 
-# Load MobileNetV2
-cv_model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.DEFAULT)
-cv_model.eval()
-
-# ImageNet labels
-imagenet_labels = [f"class_{i}" for i in range(1000)]
-imagenet_labels[954] = "banana"  # example override
-
 # Transform for classifier
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -149,26 +141,6 @@ def chat(data: ChatInput):
             temperature=0.7
         )
         return {"reply": response.choices[0].message.content}
-    except Exception as e:
-        return {"error": str(e)}
-
-# 🔹 MobileNet image classifier endpoint
-@app.post("/analyze")
-async def analyze_image(file: UploadFile = File(...)):
-    try:
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
-        tensor = transform(image).unsqueeze(0)
-
-        with torch.no_grad():
-            outputs = cv_model(tensor)
-            probs = torch.nn.functional.softmax(outputs[0], dim=0)
-            confidence, class_id = torch.max(probs, 0)
-
-        return {
-            "label": imagenet_labels[class_id.item()],
-            "confidence": float(confidence)
-        }
     except Exception as e:
         return {"error": str(e)}
 
