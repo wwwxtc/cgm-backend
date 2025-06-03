@@ -230,16 +230,16 @@ async def analyze_image(image: UploadFile = File(...)):
     try:
         image_bytes = await image.read()
 
-        # Convert to Gemini-accepted format
-        gemini_image = genai.types.Blob(
-            mime_type=image.content_type,
-            data=image_bytes
+        # Gemini accepts binary image content directly with the prompt
+        response = model.generate_content(
+            [
+                {
+                    "mime_type": image.content_type,
+                    "data": image_bytes
+                },
+                "Describe this image"
+            ]
         )
-
-        response = model.generate_content([
-            gemini_image,
-            "Describe this image"
-        ])
 
         return {"text": response.text}
 
