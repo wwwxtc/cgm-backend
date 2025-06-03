@@ -1,10 +1,7 @@
 fastapi
 uvicorn
 pydantic
-openai
 openai>=1.0.0
-torch
-torchvision
 pillow
 python-multipart
 google-generativeai
