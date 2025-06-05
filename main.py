@@ -38,6 +38,11 @@ app.add_middleware(SlowAPIMiddleware)
 def read_root():
     return {"message": "Welcome to the CGM Image & Chat API. Visit /docs to test."}
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
 # Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
