@@ -10,6 +10,14 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,  # Use DEBUG for more detail if needed
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
 
 # Load API keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -67,7 +75,8 @@ async def chat(request: Request, data: ChatInput):
         )
         return {"reply": response.choices[0].message.content}
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Error in /chat: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
@@ -96,4 +105,5 @@ async def analyze_image(request: Request, image: UploadFile = File(...)):
         return {"text": response.text}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+        logger.error(f"Error in /analyze-image/: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
