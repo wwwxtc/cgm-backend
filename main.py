@@ -17,6 +17,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+chat_history = []  # In-memory history for context-aware chat
 
 
 # Load API keys
@@ -49,6 +50,15 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+@app.get("/chat-history")
+def get_chat_history():
+    return {"history": chat_history}
+
+@app.post("/clear-chat-history")
+def clear_history():
+    chat_history.clear()
+    return {"message": "Chat history cleared."}
 
 
 # Initialize OpenAI client
@@ -107,3 +117,39 @@ async def analyze_image(request: Request, image: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error in /analyze-image/: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ChatGPT_4o contextual endpoint
+@app.post("/chat-contextual")
+@limiter.limit("10/minute")
+async def chat_contextual(request: Request, data: ChatInput):
+    if not data.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+
+    # Limit to last 10 messages to avoid token overflow
+    trimmed_history = chat_history[-10:]
+
+    messages = (
+        [{"role": "system", "content": "You are a helpful diabetes assistant."}]
+        + trimmed_history
+        + [{"role": "user", "content": data.message}]
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            temperature=0.7
+        )
+        reply = response.choices[0].message.content
+
+        # Save to history
+        chat_history.append({"role": "user", "content": data.message})
+        chat_history.append({"role": "assistant", "content": reply})
+
+        return {"reply": reply}
+    except Exception as e:
+        logger.error(f"Error in /chat-contextual: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+    
