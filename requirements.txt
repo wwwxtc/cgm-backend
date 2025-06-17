@@ -7,3 +7,4 @@ python-multipart
 google-generativeai
 slowapi
 tflite-runtime
+numpy<2.0
