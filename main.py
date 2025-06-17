@@ -14,6 +14,8 @@ import logging
 from typing import List
 import numpy as np
 import threading
+import tflite_runtime.interpreter as tflite
+
 
 
 logging.basicConfig(
