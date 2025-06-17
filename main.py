@@ -11,6 +11,10 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 import logging
+from typing import List
+import numpy as np
+import threading
+
 
 logging.basicConfig(
     level=logging.INFO,  # Use DEBUG for more detail if needed
@@ -152,4 +156,24 @@ async def chat_contextual(request: Request, data: ChatInput):
         logger.error(f"Error in /chat-contextual: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
     
-    
+
+# Load TFLite model
+interpreter = tflite.Interpreter(model_path="glunet.tflite")
+interpreter.allocate_tensors()
+
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+interpreter_lock = threading.Lock()
+
+@app.post("/predict")
+def predict(input_data: List[float]):
+    with interpreter_lock:
+        try:
+            input_array = np.array(input_data, dtype=np.float32).reshape(input_details[0]['shape'])
+            interpreter.set_tensor(input_details[0]['index'], input_array)
+            interpreter.invoke()
+            output = interpreter.get_tensor(output_details[0]['index'])
+            return {"prediction": output.tolist()}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
